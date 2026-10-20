@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>Payment — __SITE_NAME__</title>
+  <script src="__SDK_URL__"></script>
+  <script type="module" src="/static/pay.js?v=__PAY_JS_VERSION__"></script>
+  <style>
+    :root { color-scheme: light; }
+    body { margin: 0; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; background: #fff; color: #1a1a1a; }
+    main { max-width: 680px; margin: 0 auto; padding: 24px 16px; }
+    h1 { font-size: 1.25rem; margin: 0 0 4px; }
+    .muted { color: #555; margin: 0 0 16px; }
+    .env { display: inline-block; font-size: 12px; padding: 1px 8px; border-radius: 4px; background: #fde68a; margin-left: 6px; vertical-align: middle; }
+    #flywire-container { min-height: 120px; }
+    iframe.flywire-form { border: 0; width: 100%; height: 1010px; }
+    #status { margin: 16px 0; min-height: 1.5em; }
+    .actions a, .actions button { margin-right: 12px; }
+    [hidden] { display: none !important; }
+  </style>
+</head>
+<body data-config="__CONFIG__">
+  <main>
+    <h1>__SITE_NAME__<span class="env" id="env" hidden></span></h1>
+    <p class="muted" id="description"></p>
+    <div id="flywire-container"></div>
+    <p id="status" role="status" aria-live="polite">Loading payment form…</p>
+    <p class="actions">
+      <button type="button" id="retry" hidden>Try again</button>
+      <a id="back" href="#" hidden>Return to site</a>
+    </p>
+  </main>
+</body>
+</html>

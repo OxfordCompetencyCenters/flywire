@@ -1,0 +1,43 @@
+# ─────────────────────────────────────────────────────────────────────────────
+#  Websites that take payments through this gateway.
+#  THIS IS THE ONE PLACE TO ADD A WEBSITE. No secrets here — only the NAMES of
+#  environment variables that hold each site's keys (see .env.example).
+#
+#  Add a site:
+#    1. Copy a [sites.<id>] block below and edit it.
+#    2. Generate keys:  python -m flywire_checkout.gateway new-key   (run twice)
+#       and set them in the gateway's environment under the names you chose.
+#    3. Validate:       python -m flywire_checkout.gateway check-config
+#    4. Restart the gateway, give the site its API key + webhook secret.
+#  Full guide: docs/INTEGRATION.md
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Local development site (used by examples/ and the end-to-end tests).
+# Remove or keep disabled in production: allow_localhost permits http://localhost URLs.
+[sites.local-demo]
+name = "Local Demo Site"
+origins = ["http://localhost:8001", "http://127.0.0.1:8001"]
+return_url = "http://localhost:8001/payment/return"
+cancel_url = "http://localhost:8001/basket"
+webhook_url = "http://127.0.0.1:8001/payment/events"
+api_key_env = "SITE_LOCAL_DEMO_API_KEY"
+webhook_secret_env = "SITE_LOCAL_DEMO_WEBHOOK_SECRET"
+recipient_id = "D0226"
+required_fields = ["student_first_name", "student_last_name", "student_email"]
+session_types = ["one_off"]
+allow_localhost = true
+
+# Example production website — uncomment and adapt.
+# [sites.website-1]
+# name = "Website 1"
+# origins = ["https://web1.example.ac.uk"]
+# return_url = "https://web1.example.ac.uk/payment/return"
+# cancel_url = "https://web1.example.ac.uk/basket"
+# webhook_url = "https://web1.example.ac.uk/api/payment-events"
+# api_key_env = "SITE_WEBSITE_1_API_KEY"
+# webhook_secret_env = "SITE_WEBSITE_1_WEBHOOK_SECRET"
+# recipient_id = "D0226"          # Flywire portal; omit to use FLYWIRE_<ENV>_RECIPIENT_ID
+# required_fields = ["student_first_name", "student_last_name", "student_email"]
+# session_types = ["one_off"]     # one_off and/or recurring
+# max_amount = 1000000            # optional safety cap, in subunits (here £10,000.00)
+# locale = "en"

@@ -7,13 +7,18 @@ name = "flywire-checkout"
 version = "0.1.0"
 description = "Typed, secure Python integration for the Flywire Checkout Sessions API (Education)."
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 dependencies = [
     "httpx>=0.27,<1.0",
     "pydantic[email]>=2.6,<3.0",
 ]
 
 [project.optional-dependencies]
+gateway = [
+    "fastapi>=0.110",
+    "uvicorn>=0.29",
+    "python-dotenv>=1.0",
+]
 web = [
     "fastapi>=0.110",
     "uvicorn>=0.29",
@@ -24,6 +29,9 @@ dev = [
     "fastapi>=0.110",
     "python-dotenv>=1.0",
 ]
+
+[project.scripts]
+flywire-gateway = "flywire_checkout.gateway.__main__:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/flywire_checkout"]
