@@ -17,6 +17,7 @@ Website 3 ─┘ ◄── signed events ─── │  sites.toml  │ ◄─�
 | Add a website | [INTEGRATION §3](docs/INTEGRATION.md#3-add-a-website-per-site-5-minutes): one block in `sites.toml` + two keys |
 | Integrate a website | [INTEGRATION §4](docs/INTEGRATION.md#4-integrate-the-website-per-site) + a drop-in client from [`clients/`](clients) (Python, Node, PHP) |
 | See a working site | [`examples/node-site/server.mjs`](examples/node-site/server.mjs) (redirect + embed) |
+| Take payments with **no** gateway, via Flywire Pay-By-Link (e.g. Halo) | [docs/PAY_BY_LINK.md](docs/PAY_BY_LINK.md): JSON Links + signed callbacks, Python & Node |
 | Embed the Flywire library directly in one Python app | the rest of this README |
 
 ---
@@ -138,7 +139,8 @@ Things the integration handles because of these docs:
 | `services/` | Ownership, single-confirm, webhook dedupe, handler dispatch; `CheckoutStore` port |
 | `web/` | Optional FastAPI adapter + checkout page (SDK or iframe) for a single Python app |
 | `gateway/` | Multi-site payment gateway: site registry, SQLite store, hosted payment page, signed events, CLI |
-| `clients/` | Drop-in website clients: Python (stdlib), Node (no deps), PHP (curl) |
+| `clients/` | Drop-in website clients: Python (stdlib), Node (no deps), PHP (curl); Node Pay-By-Link reference |
+| `paybylink.py` | Flywire Pay-By-Link JSON Links (signed creation) + callback fulfilment policy |
 
 ## Security controls
 
