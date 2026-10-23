@@ -19,6 +19,7 @@ from ..models.notifications import PaymentNotification
 from ..models.sessions import CreateCheckoutSessionRequest, FormOptions, Payor, Recipient, SessionOptions
 from ..webhooks import WebhookVerifier
 from .events import EventDeliveryError, EventForwarder, event_id_for
+from .reports import build_rows, snapshot_from_notification, snapshot_from_payment
 from .settings import GatewaySettings
 from .sites import SiteConfig, SiteRegistry
 from .store import Checkout, CheckoutStatus, GatewayStore
@@ -28,6 +29,8 @@ logger = logging.getLogger("flywire_checkout.gateway")
 _CHECKOUT_ID = re.compile(r"^chk_[A-Za-z0-9_-]{24}$")
 # Refresh the Flywire session if it has less than this left, so the payer isn't cut off mid-form.
 _SESSION_REFRESH_MARGIN = timedelta(minutes=5)
+# Max Flywire lookups per report request (Flywire allows 500 requests/minute per IP).
+_REFRESH_LIMIT = 100
 
 
 # --------------------------------------------------------------------------- errors
@@ -276,6 +279,7 @@ class GatewayService:
             payment_reference=confirmation.payment_reference or checkout.payment_reference,
             last_error=None,
         )
+        self.capture_payment_details(checkout)
         self._deliver_best_effort(site, event_id_for(checkout.id, "submitted"), "checkout.submitted", checkout)
         return checkout
 
@@ -331,6 +335,11 @@ class GatewayService:
             changes.update(payment_status=new_status, payment_status_at=notification.event_date)
         if changes:
             checkout = self.store.update(checkout.id, **changes)
+        self.store.add_payment_event(checkout.id, notification.idempotency_key, notification.event_type,
+                                     notification.data.status, notification.event_date)
+        self.store.save_payment_details(checkout.id, notification.data.payment_id,
+                                        snapshot_from_notification(notification))
+        self.capture_payment_details(checkout)
         if site is not None:
             self.forwarder.deliver(
                 site,
@@ -352,6 +361,46 @@ class GatewayService:
                     },
                 },
             )
+
+    # ------------------------------------------------------------------ reporting
+
+    def capture_payment_details(self, checkout: Checkout) -> bool:
+        """Fetch Flywire's record of the payment and store it for reports. Best effort:
+        never let reporting break confirmation or callback handling."""
+        if not checkout.payment_reference:
+            return False
+        try:
+            payment = self.client.payments.get(checkout.payment_reference)
+        except (FlywireError, ValueError) as exc:
+            logger.warning("could not fetch payment details for %s: %s", checkout.id, _brief(exc))
+            return False
+        self.store.save_payment_details(checkout.id, payment.payment_id, snapshot_from_payment(payment))
+        return True
+
+    def payment_report(
+        self,
+        site: SiteConfig | None,
+        created_from: datetime | None = None,
+        created_to: datetime | None = None,
+        *,
+        statuses: set[str] | None = None,
+        refresh: bool = False,
+        limit: int = 5000,
+    ) -> tuple[list[dict[str, Any]], list[str]]:
+        """Rows for one site (or all sites when ``site`` is None), newest first."""
+        checkouts = self.store.list_checkouts(site.id if site else None, created_from, created_to, limit)
+        if refresh:
+            # Refresh records without details (bounded, to stay well inside Flywire's rate limit).
+            known = self.store.get_payment_details([c.id for c in checkouts])
+            for checkout in [c for c in checkouts if c.payment_reference and c.id not in known][:_REFRESH_LIMIT]:
+                self.capture_payment_details(checkout)
+        details = self.store.get_payment_details([c.id for c in checkouts])
+        events = self.store.get_payment_events([c.id for c in checkouts])
+        fields = {s.id: s.required_fields for s in self.sites}
+        rows, columns = build_rows(checkouts, details, events, fields)
+        if statuses:
+            rows = [r for r in rows if (r["payment_status"] or r["checkout_status"]) in statuses]
+        return rows, columns
 
     # ------------------------------------------------------------------ helpers
 

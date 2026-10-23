@@ -146,7 +146,21 @@ server {
 
 ### 2.4 Operations
 
-- **Back up `GATEWAY_DB_PATH`.** It records which checkout belongs to which site and order.
+- **Back up `GATEWAY_DB_PATH` with SQLite's backup command**, not a plain file copy. The database runs in
+  WAL mode, and a plain copy of `gateway.db` can miss the most recent payments (they live in
+  `gateway.db-wal` until checkpointed):
+  `sqlite3 /data/gateway.db ".backup '/backups/gateway-$(date +%F).db'"`.
+- **Finance reports across all sites** come from the server's command line (personal data, so the file is
+  created readable by its owner only):
+
+  ```bash
+  python -m flywire_checkout.gateway report --from 2026-10-01 --to 2026-10-31 --status guaranteed,delivered \
+      --refresh --output payments-2026-10.csv          # add --site website-2 for one site, --format json
+  ```
+
+  Each website can also download its own report with `GET /v1/reports/payments` (see §5).
+- **Retention:** reports and the database hold payer emails and student details. Agree how long to keep
+  them with your data protection team.
 - **Run one instance with SQLite.** To run several instances behind a load balancer, implement the
   `GatewayStore` protocol (`src/flywire_checkout/gateway/store.py`) on PostgreSQL. Every state change is
   a single conditional `UPDATE`/`INSERT`.
@@ -516,6 +530,37 @@ Returns the same object. Sites can only read their own checkouts; any other id r
 
 Cancels a checkout the payer hasn't submitted yet, and expires the Flywire session. Cancelling twice is
 fine. It returns `409` if the payer has already submitted.
+
+### `GET /v1/reports/payments`: payment report (who, how much, when, what)
+
+Returns this site's checkouts with Flywire's payment details, newest first. **Contains personal data.**
+
+| Query parameter | Example | Notes |
+|---|---|---|
+| `from`, `to` | `2026-10-01`, `2026-10-31` | Checkout creation date (UTC), both inclusive. Optional |
+| `status` | `guaranteed,delivered` | Payment status (or checkout status if unpaid). Optional |
+| `format` | `csv` (default) or `json` | CSV downloads as `payments_<site>_<from>_<to>.csv` |
+| `refresh` | `true` | First fetch missing details from Flywire (up to 100 per request) |
+
+Columns (one row per checkout):
+
+| Question | Columns |
+|---|---|
+| What | `site_id`, `order_reference`, `checkout_id`, `description`, `field_<name>` (the portal fields the site sends, e.g. `field_student_email`) |
+| How much | `amount_requested_subunits`, `amount_requested`, `amount_received` + `currency_received` (what the university gets), `amount_charged` + `currency_charged` (what the payer paid), `exchange_rate` |
+| When | `checkout_created_at`, `payment_created_at`, `guaranteed_at`, `delivered_at`, `cancelled_at`, `status_history` |
+| Who | `payer_email`, `payer_country`, `payer_state`, `payer_first_name`, `payer_last_name` |
+| How | `payment_method`, `card_brand`, `card_type`, `card_last4` |
+| State | `checkout_status`, `payment_reference`, `payment_status`, `last_error` |
+
+Notes:
+- **Where the details come from.** They're captured from Flywire (`GET /payments/{id}`) when the payer
+  submits, and again on every Flywire callback.
+- **Unpaid checkouts are included,** so you can see drop-offs.
+- **`payer_first_name` / `payer_last_name`** only come from Flywire callbacks. Flywire sends them only if
+  it has enabled the callback `payer` object for your account (it's off by default).
+- **`status_history`** needs callbacks, so it's filled only when the gateway has a public HTTPS URL.
+- **CSV cells starting with `= + - @`** are prefixed with `'` so spreadsheets don't execute them.
 
 ### Errors
 

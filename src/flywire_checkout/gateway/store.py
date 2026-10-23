@@ -77,6 +77,26 @@ class GatewayStore(Protocol):
 
     def release_event(self, key: str) -> None: ...
 
+    # --- reporting --------------------------------------------------------------------
+
+    def save_payment_details(self, checkout_id: str, payment_reference: str, details: dict[str, Any]) -> None:
+        """Store/merge the latest Flywire payment snapshot for a checkout."""
+        ...
+
+    def get_payment_details(self, checkout_ids: list[str]) -> dict[str, dict[str, Any]]: ...
+
+    def add_payment_event(self, checkout_id: str, key: str, event_type: str, status: str | None,
+                          event_date: datetime) -> None:
+        """Append to the payment's status history (idempotent on key)."""
+        ...
+
+    def get_payment_events(self, checkout_ids: list[str]) -> dict[str, list[dict[str, Any]]]: ...
+
+    def list_checkouts(self, site_id: str | None, created_from: datetime | None, created_to: datetime | None,
+                       limit: int) -> list[Checkout]:
+        """Newest first. ``site_id`` None = all sites."""
+        ...
+
 
 # --------------------------------------------------------------------------- SQLite
 
@@ -94,6 +114,23 @@ CREATE TABLE IF NOT EXISTS processed_events (
     key TEXT PRIMARY KEY,
     created_at TEXT NOT NULL
 );
+CREATE INDEX IF NOT EXISTS checkouts_site_created ON checkouts (site_id, created_at);
+-- Reporting tables (added Oct 2026; created automatically on existing databases).
+CREATE TABLE IF NOT EXISTS payment_details (
+    checkout_id TEXT PRIMARY KEY REFERENCES checkouts (id),
+    payment_reference TEXT NOT NULL,
+    data TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS payment_events (
+    key TEXT PRIMARY KEY,
+    checkout_id TEXT NOT NULL REFERENCES checkouts (id),
+    event_type TEXT NOT NULL,
+    status TEXT,
+    event_date TEXT NOT NULL,
+    received_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS payment_events_checkout ON payment_events (checkout_id, event_date);
 """
 
 
@@ -199,3 +236,73 @@ class SqliteGatewayStore:
     def release_event(self, key: str) -> None:
         with self._lock:
             self._db.execute("DELETE FROM processed_events WHERE key = ?", (key,))
+
+    # --- reporting --------------------------------------------------------------------
+
+    def save_payment_details(self, checkout_id: str, payment_reference: str, details: dict[str, Any]) -> None:
+        with self._lock:
+            row = self._db.execute("SELECT data FROM payment_details WHERE checkout_id = ?", (checkout_id,)).fetchone()
+            merged = {**(json.loads(row["data"]) if row else {}), **{k: v for k, v in details.items() if v is not None}}
+            self._db.execute(
+                "INSERT INTO payment_details (checkout_id, payment_reference, data, updated_at) VALUES (?, ?, ?, ?) "
+                "ON CONFLICT (checkout_id) DO UPDATE SET payment_reference = excluded.payment_reference, "
+                "data = excluded.data, updated_at = excluded.updated_at",
+                (checkout_id, payment_reference, json.dumps(merged, default=str), _encode("updated_at", _now())),
+            )
+
+    def get_payment_details(self, checkout_ids: list[str]) -> dict[str, dict[str, Any]]:
+        if not checkout_ids:
+            return {}
+        marks = ", ".join("?" for _ in checkout_ids)
+        with self._lock:
+            rows = self._db.execute(
+                f"SELECT checkout_id, data FROM payment_details WHERE checkout_id IN ({marks})",  # noqa: S608
+                checkout_ids,
+            ).fetchall()
+        return {r["checkout_id"]: json.loads(r["data"]) for r in rows}
+
+    def add_payment_event(self, checkout_id: str, key: str, event_type: str, status: str | None,
+                          event_date: datetime) -> None:
+        with self._lock:
+            self._db.execute(
+                "INSERT OR IGNORE INTO payment_events (key, checkout_id, event_type, status, event_date, received_at) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                (key, checkout_id, event_type, status, _encode("created_at", event_date), _encode("created_at", _now())),
+            )
+
+    def get_payment_events(self, checkout_ids: list[str]) -> dict[str, list[dict[str, Any]]]:
+        if not checkout_ids:
+            return {}
+        marks = ", ".join("?" for _ in checkout_ids)
+        with self._lock:
+            rows = self._db.execute(
+                f"SELECT checkout_id, event_type, status, event_date FROM payment_events "  # noqa: S608
+                f"WHERE checkout_id IN ({marks}) ORDER BY event_date",
+                checkout_ids,
+            ).fetchall()
+        out: dict[str, list[dict[str, Any]]] = {}
+        for r in rows:
+            out.setdefault(r["checkout_id"], []).append(
+                {"event_type": r["event_type"], "status": r["status"], "event_date": r["event_date"]}
+            )
+        return out
+
+    def list_checkouts(self, site_id: str | None, created_from: datetime | None, created_to: datetime | None,
+                       limit: int) -> list[Checkout]:
+        clauses, params = [], []
+        if site_id is not None:
+            clauses.append("site_id = ?")
+            params.append(site_id)
+        if created_from is not None:
+            clauses.append("created_at >= ?")
+            params.append(_encode("created_at", created_from))
+        if created_to is not None:
+            clauses.append("created_at < ?")
+            params.append(_encode("created_at", created_to))
+        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        with self._lock:
+            rows = self._db.execute(
+                f"SELECT * FROM checkouts {where} ORDER BY created_at DESC LIMIT ?",  # noqa: S608 (fixed clauses)
+                [*params, limit],
+            ).fetchall()
+        return [_decode(r) for r in rows]

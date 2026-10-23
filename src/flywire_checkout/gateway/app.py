@@ -28,9 +28,10 @@ import re
 from pathlib import Path
 from urllib.parse import urlencode, urlsplit, urlunsplit, parse_qsl
 
-from typing import Annotated
+from datetime import date, datetime, time, timedelta, timezone
+from typing import Annotated, Literal
 
-from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import HTMLResponse, JSONResponse, Response
@@ -38,7 +39,8 @@ from pydantic import BaseModel, ConfigDict, Field
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from ..webhooks import DIGEST_HEADER, MAX_BODY_BYTES
-from .service import CreateCheckoutInput, GatewayError, GatewayService, public_view
+from .reports import to_csv
+from .service import CreateCheckoutInput, GatewayError, GatewayService, InvalidRequest, public_view
 from .sites import SiteConfig
 from .store import CheckoutStatus
 
@@ -67,6 +69,15 @@ def _install_log_redaction() -> None:
         target = logging.getLogger(name)
         if not any(isinstance(f, RedactPaymentLinks) for f in target.filters):
             target.addFilter(RedactPaymentLinks())
+
+
+def report_window(start: date | None, end: date | None) -> tuple[datetime | None, datetime | None]:
+    """Inclusive UTC date range -> [from, to) datetimes."""
+    if start and end and end < start:
+        raise InvalidRequest("'to' must not be before 'from'")
+    created_from = datetime.combine(start, time.min, tzinfo=timezone.utc) if start else None
+    created_to = datetime.combine(end + timedelta(days=1), time.min, tzinfo=timezone.utc) if end else None
+    return created_from, created_to
 
 
 def _asset_version(name: str) -> str:
@@ -156,6 +167,26 @@ def create_gateway_app(service: GatewayService) -> FastAPI:
     @app.post("/v1/checkouts/{checkout_id}/cancel")
     def cancel_checkout(checkout_id: str, site: AuthenticatedSite) -> dict:
         return public_view(service.cancel_checkout(site, checkout_id))
+
+    @app.get("/v1/reports/payments")
+    def payments_report(
+        site: AuthenticatedSite,
+        start: Annotated[date | None, Query(alias="from")] = None,
+        end: Annotated[date | None, Query(alias="to")] = None,
+        status: str | None = None,
+        format: Literal["csv", "json"] = "csv",  # noqa: A002 (public query parameter name)
+        refresh: bool = False,
+    ) -> Response:
+        """Who paid, how much, when, for what — this site's checkouts only (contains personal data)."""
+        created_from, created_to = report_window(start, end)
+        statuses = {s.strip() for s in status.split(",") if s.strip()} if status else None
+        rows, columns = service.payment_report(site, created_from, created_to, statuses=statuses, refresh=refresh)
+        logger.info("report: site=%s rows=%d format=%s", site.id, len(rows), format)
+        if format == "json":
+            return JSONResponse({"columns": columns, "rows": rows, "count": len(rows)})
+        name = f"payments_{site.id}_{start or 'all'}_{end or 'all'}.csv"
+        return Response(to_csv(rows, columns), media_type="text/csv; charset=utf-8",
+                        headers={"Content-Disposition": f'attachment; filename="{name}"'})
 
     # ------------------------------------------------------------------ payer pages
 

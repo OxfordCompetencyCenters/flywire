@@ -7,6 +7,7 @@ import httpx
 from .config import FlywireConfig
 from .http import HttpTransport
 from .resources.checkout_sessions import CheckoutSessions
+from .resources.payments import Payments
 
 
 class FlywireClient:
@@ -20,6 +21,7 @@ class FlywireClient:
         self.config = config
         self._transport = HttpTransport(config, client=http_client)
         self.checkout_sessions = CheckoutSessions(self._transport)
+        self.payments = Payments(self._transport)
 
     @classmethod
     def from_env(cls) -> "FlywireClient":
