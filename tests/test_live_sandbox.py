@@ -37,6 +37,9 @@ from flywire_checkout.models import (  # noqa: E402
     Recipient,
 )
 
+# Above the portal minimum (D0226: "Amount must be greater than £50.00").
+LIVE_AMOUNT = 12500
+
 load_dotenv()
 CONFIG = FlywireConfig.from_env()
 if CONFIG.is_production:
@@ -106,14 +109,14 @@ def _session_requests(rid: str, recipient: Recipient | None = None) -> dict[str,
     if recipient is not None:
         common["recipient"] = recipient
     return {
-        "one_off_checkout": CreateCheckoutSessionRequest.one_off(amount=1000, recipient_id=rid, **common),
-        "one_off_cards": CreateCheckoutSessionRequest.one_off(amount=1000, recipient_id=rid, schema=PaymentSchema.CARDS, **common),
-        "recurring": CreateCheckoutSessionRequest.recurring(amount=1000, recipient_id=rid, **common),
+        "one_off_checkout": CreateCheckoutSessionRequest.one_off(amount=LIVE_AMOUNT, recipient_id=rid, **common),
+        "one_off_cards": CreateCheckoutSessionRequest.one_off(amount=LIVE_AMOUNT, recipient_id=rid, schema=PaymentSchema.CARDS, **common),
+        "recurring": CreateCheckoutSessionRequest.recurring(amount=LIVE_AMOUNT, recipient_id=rid, **common),
         "tokenization": CreateCheckoutSessionRequest.tokenization(
             recipient_id=rid, schema=PaymentSchema.CARDS, mode=ChargeMode.SUBSCRIPTION, **common),
         "tokenization_and_pay": CreateCheckoutSessionRequest.tokenization_and_pay(
-            amount=1000, recipient_id=rid, schema=PaymentSchema.CARDS, mode=ChargeMode.INSTALLMENT, **common),
-        "preauthorization": CreateCheckoutSessionRequest.preauthorization(amount=1000, recipient_id=rid, **common),
+            amount=LIVE_AMOUNT, recipient_id=rid, schema=PaymentSchema.CARDS, mode=ChargeMode.INSTALLMENT, **common),
+        "preauthorization": CreateCheckoutSessionRequest.preauthorization(amount=LIVE_AMOUNT, recipient_id=rid, **common),
     }
 
 
@@ -122,7 +125,13 @@ def test_create_then_expire_each_session_type(flywire, recipient_details, kind):
     if recipient_details is None:
         pytest.skip(f"recipient {CONFIG.recipient_id} not available to this key")
     request = _session_requests(CONFIG.recipient_id, _required_fields(recipient_details))[kind]
-    session = flywire.checkout_sessions.create(request)
+    try:
+        session = flywire.checkout_sessions.create(request)
+    except UnprocessableEntityError as exc:
+        # Portal configuration (e.g. recurring not enabled) — report Flywire's reason, don't fail.
+        if any("does not support" in str(e.get("message", "")) for e in exc.errors):
+            pytest.skip(f"portal {CONFIG.recipient_id}: {exc.errors[0]['message']}")
+        raise
     try:
         assert session.id
         assert session.expires_in_seconds and session.expires_in_seconds > 0

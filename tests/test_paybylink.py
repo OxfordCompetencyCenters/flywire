@@ -91,6 +91,15 @@ def test_create_link_signs_exact_bytes_sent():
     assert link.url == LINK and link.callback_id == "HALO-1234"
 
 
+REDIRECT_LINK = "https://gateway.demo.flywire.com/redirect/0e71e21d-b74a-44d4-be39-6409fb34dbac"
+
+
+def test_live_redirect_link_shape_accepted():
+    # Shape returned by Flywire's demo JSON Link API on 23 Oct 2026 (302s to /orders/<id>?token=…).
+    client, _ = client_with(lambda r: httpx.Response(200, json={"url": REDIRECT_LINK}))
+    assert client.create_link(licence_request()).url == REDIRECT_LINK
+
+
 def test_production_endpoint():
     client, seen = client_with(lambda r: httpx.Response(200, json={"url": LINK.replace(".demo", "")}),
                                env=Environment.PRODUCTION)
@@ -129,6 +138,11 @@ def test_wrong_secret_is_authentication_error():
     "http://payment.demo.flywire.com/orders/x?token=y",
     "https://payment.demo.flywire.com.evil.com/orders/x?token=y",
     "https://payment.demo.flywire.com/orders/x",          # no token
+    "https://gateway.demo.flywire.com/redirect/not-a-uuid",
+    "https://gateway.demo.flywire.com/redirect/0e71e21d-b74a-44d4-be39-6409fb34dbac?next=https://evil.example.com",
+    "https://evil.example.com/redirect/0e71e21d-b74a-44d4-be39-6409fb34dbac",
+    "https://gateway.demo.flywire.com.evil.com/redirect/0e71e21d-b74a-44d4-be39-6409fb34dbac",
+    "https://www.demo.flywire.com/select-school",          # the generic page from error bodies
     None,
 ])
 def test_unexpected_link_rejected(url):

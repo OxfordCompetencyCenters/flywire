@@ -102,14 +102,23 @@ export async function createJsonLink({ environment = "sandbox", sharedSecret, re
       : "Pay-By-Link request rejected without a reason (check JSON Links are enabled for the portal)", errors);
   }
   const url = data?.url;
-  let ok = false;
-  try {
-    const u = new URL(url);
-    ok = u.protocol === "https:" && (u.hostname === "flywire.com" || u.hostname.endsWith(".flywire.com")) && u.searchParams.has("token");
-  } catch { /* invalid */ }
-  if (!ok) throw new PayByLinkError(response.status, "Unexpected Pay-By-Link response");
+  if (!isFlywirePaymentUrl(url)) throw new PayByLinkError(response.status, "Unexpected Pay-By-Link response");
   return { url, callbackId: request.callback_id };
 }
+
+/**
+ * Flywire returns either the documented `…/orders/<id>?token=…` or (observed live, Oct 2026)
+ * `https://gateway[.demo].flywire.com/redirect/<uuid>`, which 302-redirects to the former.
+ */
+export function isFlywirePaymentUrl(url) {
+  let u;
+  try { u = new URL(url); } catch { return false; }
+  if (u.protocol !== "https:" || u.username || u.password || (u.port && u.port !== "443")) return false;
+  if (!(u.hostname === "flywire.com" || u.hostname.endsWith(".flywire.com"))) return false;
+  if (u.hostname.startsWith("gateway.") && /^\/redirect\/[0-9a-fA-F-]{36}$/.test(u.pathname) && !u.search) return true;
+  return u.pathname.startsWith("/orders/") && u.searchParams.has("token");
+}
+
 
 /**
  * Verify a Flywire callback over the RAW request body. Returns the parsed notification, or null.

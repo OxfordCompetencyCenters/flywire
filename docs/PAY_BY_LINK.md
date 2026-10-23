@@ -140,18 +140,20 @@ status and your reference.
 
 ---
 
-## 6. Current sandbox status (checked 21 Oct 2026, 13:34 UTC)
+## 6. Current sandbox status (checked 23 Oct 2026, 08:30 UTC)
 
-`POST https://gateway.demo.flywire.com/v1/transfers.json` for `payment_destination: "oxfordtesting"`:
+**JSON Links work.** `POST https://gateway.demo.flywire.com/v1/transfers.json` for `oxfordtesting` returns
+`200 {"url": "https://gateway.demo.flywire.com/redirect/<uuid>"}` (cf-ray `a4ef56d12c9ab54c-LHR`). That link
+302-redirects to the documented `https://payment.demo.flywire.com/orders/<id>?token=…`. The reference code
+accepts both shapes, on `flywire.com` hosts only.
 
-| Request | Response |
+Open points for Flywire:
+
+| Finding | Why it matters |
 |---|---|
-| Correctly signed, full body | `409 {"errors": [], "url": "https://payment.demo.flywire.com?destination=D0226"}` (cf-ray `a4e0a361cf32948a-LHR`) |
-| **Wrong secret** or **no digest header** | **the same 409**, not the documented 401 |
-| `payment_destination: "D0226"` | `409 {"errors": ["Payment destination is not valid"]}` |
-| Minimal body (no amount) | `409 {"errors": ["Id is invalid"]}` |
+| A request signed with a **wrong secret** also returns 200 and a link (cf-ray `a4ef56d4fd91539c-LHR`) | The sandbox doesn't enforce the signature on link creation. Anyone who knows the subdomain can create links, so always check the paid amount in the callback (§4) |
+| **United Kingdom isn't offered as a payer country** (the Checkout form lists no UK option for payment) | Most licence payers are UK-based |
+| Portal minimum is **£50.00** (`"Amount must be greater than £50.00"`) | Licence price must be above it |
+| `recurring` isn't enabled on D0226 | Only matters for instalment plans |
 
-**Interpretation:** the subdomain resolves to D0226, but Flywire rejects every link request before
-checking the signature. **JSON Links don't appear to be enabled for this portal yet** (or need a
-different secret). Flywire has to enable them before the flow can be tested end to end. The reference
-code reports this case as *"rejected without a reason (check JSON Links are enabled for the portal)"*.
+Earlier status (21 Oct): every request returned `409 {"errors": []}`, i.e. JSON Links weren't enabled yet.

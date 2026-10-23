@@ -10,7 +10,9 @@
     body { font-family: system-ui, sans-serif; max-width: 720px; margin: 2rem auto; padding: 0 16px; background: #fff; color: #111; }
     .env { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 12px; background: #fde68a; }
     .env[data-env="production"] { background: #bbf7d0; }
-    #flywire-container { margin-top: 1rem; }
+    /* The Flywire SDK sizes its iframe at height:100% of this container (recommended ~1010x660px). */
+    #flywire-container { margin-top: 1rem; height: 1010px; max-width: 660px; }
+    #flywire-container:empty { height: auto; }
     iframe.flywire-form { border: 0; width: 100%; max-width: 660px; height: 1010px; background: #fff; }
     #status { margin-top: 1rem; min-height: 1.5em; }
   </style>

@@ -79,6 +79,8 @@ const responses = [
   [409, {{ errors: ["Payment destination can't be blank"], url: "https://www.demo.flywire.com/select-school" }}],
   [200, {{ errors: ["Provider can't be blank"], url: "https://payment.demo.flywire.com?destination=TQQ" }}],
   [200, {{ url: "https://evil.example.com/orders/abc?token=xyz" }}],
+  [200, {{ url: "https://gateway.demo.flywire.com/redirect/0e71e21d-b74a-44d4-be39-6409fb34dbac" }}],
+  [200, {{ url: "https://gateway.demo.flywire.com/redirect/not-a-uuid" }}],
   [401, null],
 ];
 const seen = [];
@@ -92,5 +94,7 @@ for (const [status, body] of responses) {{
 console.log(JSON.stringify({{ out, endpoint: seen[0].url, hasDigest: !!seen[0].digest }}));
 """)
     assert result["out"] == ["link:https://payment.demo.flywire.com/orders/abc?token=xyz",
-                             "error:409", "error:409", "error:200", "error:200", "error:401"]
+                             "error:409", "error:409", "error:200", "error:200",
+                             "link:https://gateway.demo.flywire.com/redirect/0e71e21d-b74a-44d4-be39-6409fb34dbac",
+                             "error:200", "error:401"]
     assert result["endpoint"] == "https://gateway.demo.flywire.com/v1/transfers.json" and result["hasDigest"]

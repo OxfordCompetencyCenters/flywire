@@ -25,6 +25,7 @@ import hashlib
 import hmac
 import json
 import logging
+import re
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Literal
@@ -220,10 +221,22 @@ class PayByLinkClient:
         return JsonLink(url=url, callback_id=request.callback_id)
 
 
+_REDIRECT_PATH = re.compile(r"^/redirect/[0-9a-fA-F-]{36}$")
+
+
 def _is_flywire_payment_url(url: str) -> bool:
+    """Accept the two link shapes Flywire returns: the documented ``…/orders/<id>?token=…`` and
+    (observed live, Oct 2026) ``https://gateway[.demo].flywire.com/redirect/<uuid>``, which
+    302-redirects to the former."""
     parts = urlsplit(url)
     host = parts.hostname or ""
-    return parts.scheme == "https" and (host == "flywire.com" or host.endswith(".flywire.com")) and "token=" in parts.query
+    if parts.scheme != "https" or parts.username or parts.password or parts.port not in (None, 443):
+        return False
+    if not (host == "flywire.com" or host.endswith(".flywire.com")):
+        return False
+    if host.startswith("gateway.") and _REDIRECT_PATH.fullmatch(parts.path) and not parts.query:
+        return True
+    return parts.path.startswith("/orders/") and "token=" in parts.query
 
 
 # --------------------------------------------------------------------------- fulfilment

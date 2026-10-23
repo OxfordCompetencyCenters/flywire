@@ -726,3 +726,6 @@ Rotate a site's key by changing its environment variable and restarting. Only th
 | `bad signature` at the site | Body was parsed/re-serialised before verifying, wrong secret, or the server clock is off by more than 5 minutes |
 | No payment status at all | Flywire callbacks need a public HTTPS `GATEWAY_PUBLIC_URL`. Check `GET /healthz` and the gateway logs for `/webhooks/flywire` |
 | `check-config` fails | It names the exact site and setting. Fix and rerun |
+| `502` with `items: Amount must be greater than £50.00` in the gateway log | The Flywire portal has a minimum amount (D0226: £50). Charge at least that |
+| Payer's country is missing from Flywire's country list | It's a portal setting (D0226 currently doesn't offer the UK). Ask Flywire to enable it |
+| Flywire form inside the page is only ~150px tall | Flywire's SDK sizes itself to its container. The gateway page sets 1010px; do the same if you embed the SDK yourself |

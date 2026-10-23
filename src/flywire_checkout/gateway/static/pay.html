@@ -14,7 +14,10 @@
     h1 { font-size: 1.25rem; margin: 0 0 4px; }
     .muted { color: #555; margin: 0 0 16px; }
     .env { display: inline-block; font-size: 12px; padding: 1px 8px; border-radius: 4px; background: #fde68a; margin-left: 6px; vertical-align: middle; }
-    #flywire-container { min-height: 120px; }
+    /* The Flywire SDK sizes its iframe at height:100% of this container, so it needs a real height
+       (Flywire recommends ~1010x660px for card forms). */
+    #flywire-container { height: 1010px; max-width: 660px; }
+    #flywire-container:empty { height: auto; min-height: 120px; }
     iframe.flywire-form { border: 0; width: 100%; height: 1010px; }
     #status { margin: 16px 0; min-height: 1.5em; }
     .actions a, .actions button { margin-right: 12px; }
